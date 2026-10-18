@@ -1,6 +1,6 @@
 # 🚀 Hadoop HDFS (1 NameNode, 2 DataNodes) & Apache Spark (1 Master, 2 Workers)
 
-Cụm phân tán Big Data thu nhỏ được tối ưu hóa cho máy cá nhân / môi trường dev (RAM ~11GB).
+Cụm phân tán Big Data chuẩn `Big Data Europe (BDE)` được tối ưu hóa cho máy cá nhân / môi trường dev (RAM ~11GB).
 
 ---
 
@@ -21,44 +21,37 @@ Cụm phân tán Big Data thu nhỏ được tối ưu hóa cho máy cá nhân /
 
 ## 🧠 Tối ưu hóa bộ nhớ (RAM Limits)
 
-Tổng RAM khả dụng trên máy: **~11 GB**. Cấu hình được chia tải vừa phải để máy không bị tràn RAM/OOM:
+Tổng RAM máy: **~11 GB**. Cấu hình được chia tải an toàn tránh bị tràn RAM (OOM Killer - Exit Code 137):
 
-| Container | Heapsize (JVM) | Giới hạn Docker (`mem_limit`) |
-| :--- | :--- | :--- |
-| **NameNode** | 256MB - 768MB | Max: 1200MB (~1.2GB) |
-| **DataNode 1** | 128MB - 512MB | Max: 800MB (~0.8GB) |
-| **DataNode 2** | 128MB - 512MB | Max: 800MB (~0.8GB) |
-| **Spark Master** | 512MB | Max: 800MB (~0.8GB) |
-| **Spark Worker 1** | 1GB Worker Memory | Max: 1200MB (~1.2GB) |
-| **Spark Worker 2** | 1GB Worker Memory | Max: 1200MB (~1.2GB) |
-| **TỔNG CỘNG** | - | **Max ~6.0 GB (Thực tế chạy ~3.5 - 4.5 GB)** |
+| Container | Image | Cấu hình RAM nội bộ | Giới hạn Docker (`mem_limit`) |
+| :--- | :--- | :--- | :--- |
+| **NameNode** | `bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8` | Auto Heapsize | Max: **1024 MB** (~1.0 GB) |
+| **DataNode 1** | `bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8` | Auto Heapsize | Max: **800 MB** (~0.8 GB) |
+| **DataNode 2** | `bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8` | Auto Heapsize | Max: **800 MB** (~0.8 GB) |
+| **Spark Master** | `bde2020/spark-master:3.3.0-hadoop3.3` | `SPARK_DAEMON_MEMORY=512m` | Max: **800 MB** (~0.8 GB) |
+| **Spark Worker 1** | `bde2020/spark-worker:3.3.0-hadoop3.3` | `SPARK_WORKER_MEMORY=1G` | Max: **1500 MB** (~1.5 GB overhead) |
+| **Spark Worker 2** | `bde2020/spark-worker:3.3.0-hadoop3.3` | `SPARK_WORKER_MEMORY=1G` | Max: **1500 MB** (~1.5 GB overhead) |
+| **TỔNG CỘNG** | - | - | **Max ~6.4 GB (Thực tế chạy ~3.5 - 4.5 GB)** |
 
-*Còn thừa khoảng **5-6 GB RAM** cho Airflow, Postgres và hệ điều hành hoạt động mượt mà.*
+*Còn dư **~5 GB RAM** cho Airflow, PostgreSQL và hệ điều hành.*
 
 ---
 
 ## 💾 Persistent Volumes (Lưu trữ bền vững)
 
-Dữ liệu được lưu trữ trong các named volume Docker, không bị mất khi restart container:
-- `hadoop_namenode_data`: Metadata của HDFS NameNode.
-- `hadoop_datanode1_data`: Khối dữ liệu (blocks) trên DataNode 1.
-- `hadoop_datanode2_data`: Khối dữ liệu (blocks) trên DataNode 2.
-- `spark_master_data` & `spark_worker*_data`: Trạng thái và work directories của Spark.
-- `./apps`: Thư mục mount trực tiếp từ host vào container (`/opt/spark-apps`) để chứa mã nguồn PySpark.
+- `hadoop_namenode_data`: Metadata HDFS (BDE tự động format NameNode lần đầu, giữ nguyên dữ liệu khi restart).
+- `hadoop_datanode1_data`: Khối dữ liệu DataNode 1.
+- `hadoop_datanode2_data`: Khối dữ liệu DataNode 2.
+- `./apps`: Thư mục mount vào `/opt/spark-apps` bên trong container Spark để chạy script PySpark.
 
 ---
 
 ## 🚀 Hướng dẫn sử dụng
 
 ### 1. Khởi động cụm
-Từ thư mục gốc dự án:
 ```bash
 docker compose -f hadoop-spark/docker-compose.yaml up -d
 ```
-*(Hoặc `cd hadoop-spark && docker compose up -d`)*
-
-> [!NOTE]
-> NameNode sẽ **tự động kiểm tra và format lần đầu tiên** nếu thư mục volume trống. Những lần restart sau sẽ giữ nguyên dữ liệu mà không format lại.
 
 ### 2. Kiểm tra trạng thái
 ```bash
@@ -77,14 +70,8 @@ docker exec -it hadoop-namenode hdfs dfs -mkdir -p /test
 docker exec -it hadoop-namenode hdfs dfs -ls /
 ```
 
-### 4. Chạy thử script PySpark đọc/ghi HDFS
-Một file script mẫu đã được chuẩn bị sẵn trong `apps/test_spark_hdfs.py`:
-```bash
-docker exec -it spark-master spark-submit /opt/spark-apps/test_spark_hdfs.py
-```
-
-### 5. Dừng cụm
+### 4. Dừng cụm
 ```bash
 docker compose -f hadoop-spark/docker-compose.yaml down
 ```
-*(Nếu muốn xóa sạch toàn bộ dữ liệu volume để bắt đầu lại: thêm cờ `-v`: `docker compose -f hadoop-spark/docker-compose.yaml down -v`)*
+*(Thêm `-v` nếu muốn xóa sạch toàn bộ volumes để reset từ đầu: `docker compose -f hadoop-spark/docker-compose.yaml down -v`)*
