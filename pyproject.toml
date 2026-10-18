@@ -1,0 +1,23 @@
+[project]
+name = "airflow-training"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Tấn Đạt", email = "tandat88963820@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "apache-airflow>=3.3.2",
+    "cryptography>=50.0.1",
+    "delta-spark>=4.4.0",
+    "loguru>=0.7.3",
+    "pyspark>=4.2.0",
+]
+
+[project.scripts]
+airflow-training = "airflow_training:main"
+
+[build-system]
+requires = ["uv_build>=0.12.10,<0.13.0"]
+build-backend = "uv_build"

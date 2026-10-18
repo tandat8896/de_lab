@@ -1,0 +1,219 @@
+services:
+  # =========================================================================
+  # HADOOP CLUSTER (1 NameNode + 2 DataNodes)
+  # =========================================================================
+  namenode:
+    image: apache/hadoop:3.3.6
+    container_name: hadoop-namenode
+    hostname: namenode
+    restart: unless-stopped
+    command: >
+      bash -c "if [ ! -d /opt/hadoop/dfs/name/current ]; then
+                 echo '=== Formatting NameNode for the first time ===';
+                 hdfs namenode -format -force;
+               fi;
+               hdfs namenode"
+    ports:
+      - "9870:9870" # NameNode Web UI
+      - "9000:9000" # HDFS IPC/RPC
+    environment:
+      - HADOOP_HEAPSIZE_MAX=768m
+      - HADOOP_NAMENODE_OPTS=-Xms256m -Xmx768m
+    volumes:
+      - ./config/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
+      - ./config/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+      - hadoop_namenode_data:/opt/hadoop/dfs/name
+    deploy:
+      resources:
+        limits:
+          memory: 1200M
+        reservations:
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "hdfs dfsadmin -safemode get || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 25s
+    networks:
+      - bigdata-net
+
+  datanode1:
+    image: apache/hadoop:3.3.6
+    container_name: hadoop-datanode-1
+    hostname: datanode1
+    restart: unless-stopped
+    command: ["hdfs", "datanode"]
+    ports:
+      - "9864:9864" # DataNode 1 Web UI
+    environment:
+      - HADOOP_HEAPSIZE_MAX=512m
+      - HADOOP_DATANODE_OPTS=-Xms128m -Xmx512m
+    volumes:
+      - ./config/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
+      - ./config/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+      - hadoop_datanode1_data:/opt/hadoop/dfs/data
+    deploy:
+      resources:
+        limits:
+          memory: 800M
+        reservations:
+          memory: 384M
+    depends_on:
+      namenode:
+        condition: service_healthy
+    networks:
+      - bigdata-net
+
+  datanode2:
+    image: apache/hadoop:3.3.6
+    container_name: hadoop-datanode-2
+    hostname: datanode2
+    restart: unless-stopped
+    command: ["hdfs", "datanode"]
+    ports:
+      - "9865:9864" # DataNode 2 Web UI (mapped to host 9865 to prevent collision)
+    environment:
+      - HADOOP_HEAPSIZE_MAX=512m
+      - HADOOP_DATANODE_OPTS=-Xms128m -Xmx512m
+    volumes:
+      - ./config/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
+      - ./config/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+      - hadoop_datanode2_data:/opt/hadoop/dfs/data
+    deploy:
+      resources:
+        limits:
+          memory: 800M
+        reservations:
+          memory: 384M
+    depends_on:
+      namenode:
+        condition: service_healthy
+    networks:
+      - bigdata-net
+
+  # =========================================================================
+  # SPARK CLUSTER (1 Master + 2 Workers)
+  # =========================================================================
+  spark-master:
+    image: bitnami/spark:3.5
+    container_name: spark-master
+    hostname: spark-master
+    restart: unless-stopped
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - SPARK_DAEMON_MEMORY=512m
+    ports:
+      - "7077:7077" # Spark Master RPC
+      - "8082:8080" # Spark Master Web UI (8082 to avoid conflict with Airflow 8080)
+    volumes:
+      - ./config/core-site.xml:/opt/bitnami/spark/conf/core-site.xml:ro
+      - ./config/hdfs-site.xml:/opt/bitnami/spark/conf/hdfs-site.xml:ro
+      - ./apps:/opt/spark-apps
+      - spark_master_data:/bitnami/spark
+    deploy:
+      resources:
+        limits:
+          memory: 800M
+        reservations:
+          memory: 384M
+    depends_on:
+      namenode:
+        condition: service_healthy
+    networks:
+      - bigdata-net
+
+  spark-worker-1:
+    image: bitnami/spark:3.5
+    container_name: spark-worker-1
+    hostname: spark-worker-1
+    restart: unless-stopped
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=1G
+      - SPARK_WORKER_CORES=1
+      - SPARK_DAEMON_MEMORY=512m
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    ports:
+      - "8083:8081" # Spark Worker 1 Web UI
+    volumes:
+      - ./config/core-site.xml:/opt/bitnami/spark/conf/core-site.xml:ro
+      - ./config/hdfs-site.xml:/opt/bitnami/spark/conf/hdfs-site.xml:ro
+      - ./apps:/opt/spark-apps
+      - spark_worker1_data:/bitnami/spark
+    deploy:
+      resources:
+        limits:
+          memory: 1200M
+        reservations:
+          memory: 512M
+    depends_on:
+      - spark-master
+    networks:
+      - bigdata-net
+
+  spark-worker-2:
+    image: bitnami/spark:3.5
+    container_name: spark-worker-2
+    hostname: spark-worker-2
+    restart: unless-stopped
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=1G
+      - SPARK_WORKER_CORES=1
+      - SPARK_DAEMON_MEMORY=512m
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    ports:
+      - "8084:8081" # Spark Worker 2 Web UI (mapped to host 8084)
+    volumes:
+      - ./config/core-site.xml:/opt/bitnami/spark/conf/core-site.xml:ro
+      - ./config/hdfs-site.xml:/opt/bitnami/spark/conf/hdfs-site.xml:ro
+      - ./apps:/opt/spark-apps
+      - spark_worker2_data:/bitnami/spark
+    deploy:
+      resources:
+        limits:
+          memory: 1200M
+        reservations:
+          memory: 512M
+    depends_on:
+      - spark-master
+    networks:
+      - bigdata-net
+
+# =========================================================================
+# PERSISTENT VOLUMES (Data survives container restarts)
+# =========================================================================
+volumes:
+  hadoop_namenode_data:
+    driver: local
+  hadoop_datanode1_data:
+    driver: local
+  hadoop_datanode2_data:
+    driver: local
+  spark_master_data:
+    driver: local
+  spark_worker1_data:
+    driver: local
+  spark_worker2_data:
+    driver: local
+
+# =========================================================================
+# NETWORKS
+# =========================================================================
+networks:
+  bigdata-net:
+    name: bigdata-net
+    driver: bridge
