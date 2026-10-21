@@ -1,4 +1,1 @@
-a
-ua
-ua
-ua
+![Architecture](assets/architecture.jpg)
